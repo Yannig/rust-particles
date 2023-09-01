@@ -1,11 +1,13 @@
+use std::rc::Rc;
 use sdl2::render::WindowCanvas;
 use crate::particle::Particle;
-
+use crate::constraint::Constraint;
 
 const GRAVITY: f64 = 0.1;
 
 pub struct World {
-    particles: Vec<Particle>,
+    pub particles: Vec<Particle>,
+    pub constraints: Vec<Constraint>,
     pub min_x: f64,
     pub min_y: f64,
     pub max_x: f64,
@@ -17,6 +19,7 @@ impl World {
     pub fn new(width: f64, height: f64) -> World {
         World {
             particles: Vec::new(),
+            constraints: vec![],
             min_x: 0.0,
             min_y: 0.0,
             max_x: width,
@@ -24,11 +27,17 @@ impl World {
             gravity: GRAVITY
         }
     }
-    pub fn create_particle<'a>(&mut self, x: f64, y: f64, speed_x: f64, speed_y: f64, mass: f64, elasticity_factor: f64, friction_factor: f64) {
-        self.particles.push(Particle::new(x, y, speed_x, speed_y, mass, elasticity_factor, friction_factor));
+    pub fn add_particle(&mut self, p: Particle) -> &mut Particle {
+        self.particles.push(p);
+        // Send back a reference over last pushed particle
+        let i = self.particles.len() - 1;
+        return &mut self.particles[i];
     }
-    pub fn draw(&self, canvas: &mut WindowCanvas) {
-        for p in &self.particles {
+    pub fn add_constraint(&'static mut self, p1: Rc<Particle>, p2: Rc<Particle>, min_distance: f64, max_distance: f64) {
+        self.constraints.push(Constraint { p1, p2, min_distance, max_distance });
+    }
+    pub fn draw(&mut self, canvas: &mut WindowCanvas) {
+        for p in &mut self.particles {
             p.draw(canvas);
         }
     }
@@ -37,6 +46,14 @@ impl World {
             p.update(self.gravity);
             p.check_rebound_x(self.min_x, self.max_x);
             p.check_rebound_y(self.min_y, self.max_y);
+        }
+        // Resolve constraints by looping
+        for _i in 0..10 {
+            for c in &mut self.constraints {
+                if ! c.is_ok() {
+                    c.fix();
+                }
+            }
         }
     }
     pub fn x(&self) -> u32 {
