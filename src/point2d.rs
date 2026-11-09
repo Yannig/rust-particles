@@ -76,10 +76,6 @@ impl Point2d {
         Point2d { x, y }
     }
     pub fn draw(&self, canvas: &mut WindowCanvas) -> Result<(), String> {
-        let _x = self.x as i32;
-        let _y = self.y as i32;
-        canvas.draw_point(Point::new(_x, _y))?;
-        canvas.draw_line(Point::new(_x - 2, _y - 2), Point::new(_x + 2, _y + 2))?;
-        canvas.draw_line(Point::new(_x + 2, _y - 2), Point::new(_x - 2, _y + 2))
+        canvas.draw_point(Point::new(self.x as i32, self.y as i32))
     }
 }

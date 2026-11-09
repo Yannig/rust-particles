@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 fn add_demo_rope(world: &mut World) {
     let x = world.x() as f64 / 2.0;
-    world.create_rope(Point2d::new(x, 50.0), Point2d::new(x + 300.0, 150.0), 31);
+    world.create_rope(Point2d::new(x, 50.0), Point2d::new(x + 600.0, 250.0), 61);
 }
 
 fn main() -> Result<(), String> {
@@ -34,7 +34,7 @@ fn main() -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
     let mut event_pump = sdl_context.event_pump()?;
-    world.add_particle(Particle::new(1.0, 10.0, 10.0, 0.0, 1.0, 0.3, 0.2));
+    world.add_particle(Particle::new(20.0, 20.0, 10.0, 0.0, 10.0, 0.3, 0.2).with_radius(12.0));
     add_demo_rope(&mut world);
 
     let mut previous_frame = Instant::now();
@@ -61,7 +61,9 @@ fn main() -> Result<(), String> {
                     repeat: false,
                     ..
                 } => {
-                    world.add_particle(Particle::new(1.0, 10.0, 10.0, 0.0, 1.0, 0.3, 0.2));
+                    world.add_particle(
+                        Particle::new(20.0, 20.0, 10.0, 0.0, 10.0, 0.3, 0.2).with_radius(12.0),
+                    );
                 }
                 Event::KeyDown {
                     keycode: Some(Keycode::R),
