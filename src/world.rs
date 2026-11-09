@@ -97,6 +97,60 @@ impl World {
         }
     }
 
+    pub fn create_flag(
+        &mut self,
+        top_left: Point2d,
+        bottom_right: Point2d,
+        columns: usize,
+        rows: usize,
+    ) {
+        assert!(
+            columns >= 2 && rows >= 2,
+            "a flag needs at least two rows and columns"
+        );
+        assert!([top_left.x, top_left.y, bottom_right.x, bottom_right.y]
+            .iter()
+            .all(|v| v.is_finite()));
+        let width = bottom_right.x - top_left.x;
+        let height = bottom_right.y - top_left.y;
+        assert!(width > 0.0 && height > 0.0, "invalid flag dimensions");
+        let dx = width / (columns - 1) as f64;
+        let dy = height / (rows - 1) as f64;
+        let radius = 3.0_f64.min(dx / 2.0).min(dy / 2.0);
+        assert!(
+            top_left.x >= self.min.x + radius
+                && top_left.y >= self.min.y + radius
+                && bottom_right.x <= self.max.x - radius
+                && bottom_right.y <= self.max.y - radius,
+            "flag does not fit in world"
+        );
+        let first = self.particles.len();
+        for row in 0..rows {
+            for column in 0..columns {
+                let anchored = row == rows - 1 && (column == 0 || column == columns - 1);
+                self.add_particle(
+                    Particle::new(
+                        top_left.x + width * column as f64 / (columns - 1) as f64,
+                        top_left.y + height * row as f64 / (rows - 1) as f64,
+                        0.0,
+                        0.0,
+                        if anchored { 0.0 } else { 1.0 },
+                        0.0,
+                        0.2,
+                    )
+                    .with_radius(radius),
+                );
+                let index = first + row * columns + column;
+                if column > 0 {
+                    self.add_constraint(index - 1, index, 0.0, dx);
+                }
+                if row > 0 {
+                    self.add_constraint(index - columns, index, 0.0, dy);
+                }
+            }
+        }
+    }
+
     pub fn draw(&self, canvas: &mut WindowCanvas) -> Result<(), String> {
         canvas.set_draw_color(Color::RGB(60, 100, 180));
         for c in &self.constraints {
@@ -162,6 +216,109 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flag_builds_flexible_grid_with_two_bottom_anchors() {
+        let mut world = World::new(800.0, 600.0);
+        world.add_particle(disk(10.0, 10.0, 1.0, 3.0));
+        world.create_flag(Point2d::new(100.0, 100.0), Point2d::new(220.0, 180.0), 7, 5);
+        assert_eq!(world.particles.len(), 36);
+        assert_eq!(world.constraints.len(), 5 * 6 + 4 * 7);
+        let anchors: Vec<_> = world
+            .particles
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.mass == 0.0)
+            .map(|(i, p)| (i, p.current))
+            .collect();
+        assert_eq!(
+            anchors,
+            vec![
+                (29, Point2d::new(100.0, 180.0)),
+                (35, Point2d::new(220.0, 180.0)),
+            ]
+        );
+        assert_eq!(world.particles[1].current, Point2d::new(100.0, 100.0));
+        assert!(world.constraints.iter().all(|c| c.p1 >= 1 && c.p2 >= 1));
+        for c in &world.constraints {
+            let first = c.p1 - 1;
+            let second = c.p2 - 1;
+            assert!((second == first + 1 && first / 7 == second / 7) || second == first + 7);
+            assert_eq!(c.min_distance, 0.0);
+            let delta = world.particles[c.p2].current - world.particles[c.p1].current;
+            assert!((delta.x.hypot(delta.y) - c.max_distance).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn flag_falls_while_bottom_corners_remain_fixed() {
+        let mut world = World::new(500.0, 500.0);
+        world.create_flag(Point2d::new(100.0, 100.0), Point2d::new(220.0, 180.0), 7, 5);
+        for _ in 0..600 {
+            world.update();
+            assert_eq!(world.particles[28].current, Point2d::new(100.0, 180.0));
+            assert_eq!(world.particles[34].current, Point2d::new(220.0, 180.0));
+            for p in &world.particles {
+                assert!(p.current.x.is_finite() && p.current.y.is_finite());
+                assert!((p.radius..=500.0 - p.radius).contains(&p.current.x));
+                assert!((p.radius..=500.0 - p.radius).contains(&p.current.y));
+            }
+        }
+        assert!(world.particles[3].current.y > 180.0);
+    }
+
+    #[test]
+    fn flag_links_allow_compression_but_limit_stretching() {
+        let mut world = World::new(500.0, 500.0);
+        world.create_flag(Point2d::new(100.0, 100.0), Point2d::new(220.0, 180.0), 7, 5);
+        let link = &world.constraints[0];
+        let first = world.particles[link.p1].current;
+        world.particles[link.p2].current = Point2d::new(first.x + 10.0, first.y);
+        link.fix(&mut world.particles);
+        assert_eq!(world.particles[link.p1].current, first);
+        assert_eq!(
+            world.particles[link.p2].current,
+            Point2d::new(first.x + 10.0, first.y)
+        );
+
+        world.particles[link.p2].current.x = first.x + 40.0;
+        link.fix(&mut world.particles);
+        let delta = world.particles[link.p2].current - world.particles[link.p1].current;
+        assert!((delta.x.hypot(delta.y) - link.max_distance).abs() < 1e-10);
+    }
+
+    #[test]
+    #[should_panic(expected = "at least two rows and columns")]
+    fn rejects_flag_without_cells() {
+        World::new(500.0, 500.0).create_flag(
+            Point2d::new(100.0, 100.0),
+            Point2d::new(200.0, 200.0),
+            1,
+            5,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid flag dimensions")]
+    fn rejects_inverted_flag() {
+        World::new(500.0, 500.0).create_flag(
+            Point2d::new(200.0, 200.0),
+            Point2d::new(100.0, 100.0),
+            5,
+            5,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "flag does not fit")]
+    fn rejects_flag_outside_world() {
+        World::new(100.0, 100.0).create_flag(
+            Point2d::new(10.0, 10.0),
+            Point2d::new(120.0, 80.0),
+            5,
+            5,
+        );
+    }
 
     #[test]
     fn rope_connects_world_particles_and_reaches_endpoint() {

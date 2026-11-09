@@ -8,10 +8,21 @@ Demo 2D SDL2 du mecanisme decrit dans
 Installer Rust et la bibliotheque de developpement SDL2 (`libsdl2-dev` sur
 Debian/Ubuntu), puis executer `cargo run`.
 
-Une corde suspendue et une particule libre apparaissent au lancement.
-Les segments bleus representent les contraintes de distance et le point rouge
-est l'ancrage immobile. `R` ajoute une corde, `N` ajoute une particule libre,
-`Echap` ferme la fenetre.
+Une corde suspendue, un drapeau en tissu et une particule libre apparaissent
+au lancement. Les segments bleus representent les contraintes de distance
+et les points rouges sont les ancrages immobiles. `R` ajoute une corde,
+`F` ajoute un drapeau, `N` ajoute une particule libre, `Echap` ferme la fenetre.
+
+Le drapeau est un maillage de 13 colonnes et 9 lignes, fixe uniquement aux
+coins inferieurs gauche et droit. Sa partie superieure retombe sous la gravite.
+`World::create_flag` construit une grille avec des contraintes horizontales
+et verticales uniquement. Chaque lien limite la distance maximale sans imposer
+de longueur minimale : les noeuds peuvent se rapprocher et le tissu retomber
+sous les attaches. Les collisions des disques empechent leur superposition.
+Sans diagonales, les cellules peuvent aussi se deformer en cisaillement.
+La corde conserve ses contraintes de longueur constante.
+Le rendu montre le maillage, sans surface pleine. Ses noeuds participent aux
+collisions comme ceux de la corde ; les faces et les segments ne collisionnent pas.
 
 ## Simulation
 
@@ -29,13 +40,21 @@ La corde utilise des contraintes de longueur constante entre voisins,
 relaxees 80 fois par pas ; elle reste donc legerement extensible numeriquement.
 Les particules sont des disques pleins : rayon de 3 pixels par defaut,
 personnalisable avec `Particle::new(...).with_radius(rayon)`. Les particules
-libres de la demo ont un rayon de 12 pixels. Les noeuds de corde ont un rayon
+libres de la demo ont un rayon aleatoire entre 5 et 60 pixels, au lancement
+comme avec `N`, pour obtenir des disques plus grands que les mailles du tissu.
+Leur masse est proportionnelle a leur surface (densite constante en 2D) :
+`masse = 10 * (rayon / 12)^2`. Les grosses particules deplacent donc davantage
+les autres particules et le tissu lors des contacts. Leur vitesse initiale
+et leur acceleration gravitationnelle restent identiques.
+Les noeuds de corde ont un rayon
 de 3 pixels au maximum, reduit si necessaire a la moitie de la longueur d'un
 segment pour ne pas contredire les contraintes.
 
 A chaque iteration, les paires de disques en chevauchement sont separees
 jusqu'a la somme de leurs rayons, selon leurs masses inverses, puis les bords
 sont appliques en tenant compte du rayon. Les ancrages ne bougent pas.
+Les contraintes comparent d'abord les distances au carre : une distance deja
+valide ne demande pas de racine carree, sauf aux echelles numeriques extremes.
 Cette projection de contact utilise la vitesse implicite de Verlet ; les
 coefficients de restitution et de frottement s'appliquent seulement aux bords.
 La detection examine toutes les paires (cout quadratique).

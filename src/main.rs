@@ -11,9 +11,27 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use std::time::{Duration, Instant};
 
+fn add_demo_particle(world: &mut World) {
+    let radius = rand::random_range(5.0..=60.0);
+    let start = 20.0_f64.max(radius + 2.0);
+    let mass = 10.0 * (radius / 12.0).powi(2);
+    world.add_particle(Particle::new(start, start, 10.0, 0.0, mass, 0.3, 0.2).with_radius(radius));
+}
+
 fn add_demo_rope(world: &mut World) {
     let x = world.x() as f64 / 2.0;
     world.create_rope(Point2d::new(x, 50.0), Point2d::new(x + 600.0, 250.0), 61);
+}
+
+fn add_demo_flag(world: &mut World) {
+    let center_x = world.x() as f64 / 2.0;
+    let anchor_y = world.y() as f64 / 2.0;
+    world.create_flag(
+        Point2d::new(center_x - 180.0, anchor_y - 240.0),
+        Point2d::new(center_x + 180.0, anchor_y),
+        13,
+        9,
+    );
 }
 
 fn main() -> Result<(), String> {
@@ -22,7 +40,7 @@ fn main() -> Result<(), String> {
     let mut world = World::new(1800.0, 900.0);
     let window = video_subsystem
         .window(
-            "Corde Verlet | R : ajouter une corde | N : particule | Echap : quitter",
+            "Verlet | R : corde | F : drapeau | N : particule | Echap : quitter",
             world.x(),
             world.y(),
         )
@@ -34,8 +52,9 @@ fn main() -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
     let mut event_pump = sdl_context.event_pump()?;
-    world.add_particle(Particle::new(20.0, 20.0, 10.0, 0.0, 10.0, 0.3, 0.2).with_radius(12.0));
+    add_demo_particle(&mut world);
     add_demo_rope(&mut world);
+    add_demo_flag(&mut world);
 
     let mut previous_frame = Instant::now();
     let mut accumulator = 0.0;
@@ -61,9 +80,7 @@ fn main() -> Result<(), String> {
                     repeat: false,
                     ..
                 } => {
-                    world.add_particle(
-                        Particle::new(20.0, 20.0, 10.0, 0.0, 10.0, 0.3, 0.2).with_radius(12.0),
-                    );
+                    add_demo_particle(&mut world);
                 }
                 Event::KeyDown {
                     keycode: Some(Keycode::R),
@@ -71,6 +88,13 @@ fn main() -> Result<(), String> {
                     ..
                 } => {
                     add_demo_rope(&mut world);
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::F),
+                    repeat: false,
+                    ..
+                } => {
+                    add_demo_flag(&mut world);
                 }
                 _ => {}
             }
@@ -88,4 +112,26 @@ fn main() -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn demo_particles_have_bounded_random_radii_and_start_inside_world() {
+        let mut world = World::new(1800.0, 900.0);
+        for _ in 0..128 {
+            add_demo_particle(&mut world);
+        }
+        for p in &world.particles {
+            assert!((5.0..=60.0).contains(&p.radius));
+            assert!(p.current.x - p.radius >= 0.0);
+            assert!(p.current.y - p.radius >= 0.0);
+            assert!(p.current.x + p.radius <= world.max.x);
+            assert!(p.current.y + p.radius <= world.max.y);
+            assert_eq!(p.current - p.previous, Point2d::new(10.0, 0.0));
+            assert!((p.mass / (p.radius * p.radius) - 10.0 / 144.0).abs() < 1e-12);
+        }
+    }
 }
