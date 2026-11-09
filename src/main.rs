@@ -1,73 +1,89 @@
-extern crate sdl2;
-mod particle;
-mod world;
 mod constraint;
+mod particle;
+mod point2d;
+mod world;
 
+use crate::particle::Particle;
+use crate::point2d::Point2d;
+use crate::world::{World, TIME_STEP};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
-use std::time::Duration;
-use crate::world::World;
-use crate::particle::Particle;
+use std::time::{Duration, Instant};
 
-fn create_rope(world: &mut World, start_x: f64, start_y: f64, end_x: f64, end_y: f64, node_count: u32) {
-    let step_x = (end_x - start_x) / (node_count as f64);
-    let step_y = (end_y - start_y) / (node_count as f64);
-    let max_d = f64::sqrt(step_x * step_x + step_y * step_y);
-    world.add_particle(Particle::new(start_x, start_y, 0.0, 0.0, -1.0, 1.0, 0.0));
-    for i in 1..node_count {
-        world.add_particle(Particle::new(start_x + (i as f64 * step_x), start_y + (i as f64 * step_y), 0.0, 0.0, 1.0, 1.0, 0.0));
-
-    }
-    // world.add_constraint(0.0, max_d);
-    /* for i in 1.._particles.len() {
-        // world.constraints.push(&Constraint { p1: &_particles[i - 1], p2: &_particles[i], min_distance: 0.0, max_distance: max_d });
-    }*/
+fn add_demo_rope(world: &mut World) {
+    let x = world.x() as f64 / 2.0;
+    world.create_rope(Point2d::new(x, 50.0), Point2d::new(x + 300.0, 150.0), 31);
 }
 
-fn main() {
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
-
+fn main() -> Result<(), String> {
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
     let mut world = World::new(1800.0, 900.0);
     let window = video_subsystem
-        .window("Graphisme 2D", world.x(), world.y())
+        .window(
+            "Corde Verlet | R : ajouter une corde | N : particule | Echap : quitter",
+            world.x(),
+            world.y(),
+        )
         .position_centered()
         .build()
-        .unwrap();
+        .map_err(|error| error.to_string())?;
+    let mut canvas = window
+        .into_canvas()
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut event_pump = sdl_context.event_pump()?;
+    world.add_particle(Particle::new(1.0, 10.0, 10.0, 0.0, 1.0, 0.3, 0.2));
+    add_demo_rope(&mut world);
 
-    let mut canvas = window.into_canvas().build().unwrap();
-
-    let mut event_pump = sdl_context.event_pump().unwrap();
-
-    let mut p = Particle::new(1.0, 10.0,10.0, 0.0, 1.0, 0.3, 0.2);
-    world.add_particle(p);
-    // world.particles.push(p);
-
+    let mut previous_frame = Instant::now();
+    let mut accumulator = 0.0;
     'running: loop {
+        let frame_start = Instant::now();
+        // Limit catch-up after a long pause to avoid a spiral of death.
+        accumulator += frame_start
+            .duration_since(previous_frame)
+            .as_secs_f64()
+            .min(0.25);
+        previous_frame = frame_start;
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => {
                     break 'running;
                 }
-                Event::KeyDown { keycode: Some(Keycode::N), .. } => {
-                    let mut p = Particle::new(1.0, 10.0,10.0, 0.0, 1.0, 0.3, 0.2);
-                    world.add_particle(p);
+                Event::KeyDown {
+                    keycode: Some(Keycode::N),
+                    repeat: false,
+                    ..
+                } => {
+                    world.add_particle(Particle::new(1.0, 10.0, 10.0, 0.0, 1.0, 0.3, 0.2));
                 }
-                Event::KeyDown { keycode: Some(Keycode::R), .. } => {
-                    let x = (world.x() / 2) as f64;
-                    create_rope(&mut world, x, 5.0,x + 250.0 , 500.0, 50);
+                Event::KeyDown {
+                    keycode: Some(Keycode::R),
+                    repeat: false,
+                    ..
+                } => {
+                    add_demo_rope(&mut world);
                 }
                 _ => {}
             }
         }
-
+        while accumulator >= TIME_STEP {
+            world.update();
+            accumulator -= TIME_STEP;
+        }
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         canvas.clear();
-        world.update();
-        world.draw(&mut canvas);
+        world.draw(&mut canvas)?;
         canvas.present();
-
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        std::thread::sleep(
+            Duration::from_secs_f64(TIME_STEP).saturating_sub(frame_start.elapsed()),
+        );
     }
+    Ok(())
 }

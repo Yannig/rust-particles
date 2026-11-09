@@ -1,14 +1,8 @@
-use std::ops;
+use crate::point2d::Point2d;
 use sdl2::pixels::Color;
-use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
 
 #[derive(Clone, Debug)]
-pub struct Point2d {
-    pub x: f64,
-    pub y: f64
-}
-
 pub struct Particle {
     pub current: Point2d,
     pub previous: Point2d,
@@ -17,78 +11,128 @@ pub struct Particle {
     pub friction_factor: f64,
 }
 
-impl ops::Add<Point2d> for Point2d {
-    type Output = Point2d;
-    fn add(self, rhs: Point2d) -> Point2d {
-        return Point2d {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
+impl Particle {
+    pub fn new(
+        x: f64,
+        y: f64,
+        speed_x: f64,
+        speed_y: f64,
+        mass: f64,
+        elasticity_factor: f64,
+        friction_factor: f64,
+    ) -> Particle {
+        assert!([x, y, speed_x, speed_y, mass].iter().all(|v| v.is_finite()));
+        assert!((0.0..=1.0).contains(&elasticity_factor));
+        assert!((0.0..=1.0).contains(&friction_factor));
+        Particle {
+            current: Point2d { x, y },
+            previous: Point2d {
+                x: x - speed_x,
+                y: y - speed_y,
+            },
+            elasticity_factor,
+            mass,
+            friction_factor,
         }
     }
-}
-impl ops::AddAssign<Point2d> for Point2d {
-    fn add_assign(&mut self, rhs: Point2d) {
-        self.x += rhs.x;
-        self.y += rhs.y;
+    pub fn inverse_mass(&self) -> f64 {
+        if self.mass > 0.0 {
+            1.0 / self.mass
+        } else {
+            0.0
+        }
     }
-}
-impl ops::Div<f64> for Point2d {
-    type Output = Point2d;
-    fn div(self, rhs: f64) -> Point2d {
-        return Point2d {
-            x: self.x / rhs,
-            y: self.y / rhs,
+    pub fn draw(&self, canvas: &mut WindowCanvas) -> Result<(), String> {
+        canvas.set_draw_color(if self.mass <= 0.0 {
+            Color::RGB(200, 50, 50)
+        } else {
+            Color::RGB(0, 0, 0)
+        });
+        self.current.draw(canvas)
+    }
+    pub fn update(&mut self, gravity: &Point2d) {
+        if self.mass <= 0.0 {
+            return;
+        }
+        let _previous = self.current;
+        self.current += &(self.current - self.previous + gravity);
+        self.previous = _previous;
+    }
+    pub fn check_rebound_x(&mut self, min_x: f64, max_x: f64) {
+        if self.mass <= 0.0 {
+            return;
+        }
+        if self.current.x > max_x || self.current.x < min_x {
+            let velocity = self.current - self.previous;
+            let outward = (self.current.x > max_x && velocity.x > 0.0)
+                || (self.current.x < min_x && velocity.x < 0.0);
+            self.current.x = self.current.x.clamp(min_x, max_x);
+            if outward {
+                self.previous.x = self.current.x + self.elasticity_factor * velocity.x;
+                self.previous.y = self.current.y - (1.0 - self.friction_factor) * velocity.y;
+            }
+        }
+    }
+    pub fn check_rebound_y(&mut self, min_y: f64, max_y: f64) {
+        if self.mass <= 0.0 {
+            return;
+        }
+        if self.current.y > max_y || self.current.y < min_y {
+            let velocity = self.current - self.previous;
+            let outward = (self.current.y > max_y && velocity.y > 0.0)
+                || (self.current.y < min_y && velocity.y < 0.0);
+            self.current.y = self.current.y.clamp(min_y, max_y);
+            if outward {
+                self.previous.x = self.current.x - (1.0 - self.friction_factor) * velocity.x;
+                self.previous.y = self.current.y + self.elasticity_factor * velocity.y;
+            }
         }
     }
 }
 
-impl Point2d {
-    pub fn draw(&self, canvas: &mut WindowCanvas) {
-        let _x = self.x as i32;
-        let _y = self.y as i32;
-        let _ = canvas.draw_point(Point::new(_x, _y));
-        let _ = canvas.draw_line(Point::new(_x - 2, _y - 2), Point::new(_x + 2, _y + 2));
-        let _ = canvas.draw_line(Point::new(_x + 2,_y - 2), Point::new(_x - 2,_y + 2));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verlet_preserves_inertia_and_adds_gravity() {
+        let mut p = Particle::new(1.0, 10.0, 2.0, 3.0, 1.0, 0.0, 0.0);
+        p.update(&Point2d::new(0.0, 0.5));
+        assert_eq!(p.previous, Point2d::new(1.0, 10.0));
+        assert_eq!(p.current, Point2d::new(3.0, 13.5));
+        p.update(&Point2d::new(0.0, 0.5));
+        assert_eq!(p.current, Point2d::new(5.0, 17.5));
     }
-}
-impl Particle {
-    pub fn new(x: f64, y: f64, speed_x: f64, speed_y: f64, mass: f64, elasticity_factor: f64, friction_factor: f64) -> Particle {
-        Particle {
-            current: Point2d {x, y},
-            previous: Point2d {x: x - speed_x, y: y - speed_y},
-            elasticity_factor,
-            mass,
-            friction_factor
+
+    #[test]
+    fn anchors_ignore_gravity_and_collisions() {
+        for mass in [-1.0, 0.0] {
+            let mut p = Particle::new(10.0, 10.0, 0.0, 0.0, mass, 1.0, 0.0);
+            p.update(&Point2d::new(0.0, 1.0));
+            p.check_rebound_x(0.0, 5.0);
+            p.check_rebound_y(0.0, 5.0);
+            assert_eq!(p.current, Point2d::new(10.0, 10.0));
         }
     }
-    pub fn draw(&self, canvas: &mut WindowCanvas) {
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        self.current.draw(canvas);
-    }
-    pub fn update(&mut self, gravity: f64) {
-        // Object with no mass are non movable objects
-        if self.mass < 0.0 {
-            return;
-        }
-        // Compute new position for current particle using previous position and gravity
-        let _previous = self.current.clone();
-        self.current += Point2d { x: self.current.x - self.previous.x, y: (self.current.y - self.previous.y) + gravity };
-        self.previous = _previous;
-    }
-    pub fn check_rebound_x(&mut self, min_x: f64, max_x: f64) {
-        if self.current.x > max_x || self.current.x < min_x {
-            let _x = self.current.x;
-            self.current.x = self.previous.x;
-            self.previous.x = _x - self.elasticity_factor * (_x - self.previous.x);
-            self.previous.y = self.current.y - (1.0 - self.friction_factor) * (self.current.y - self.previous.y);
+
+    #[test]
+    fn walls_project_and_reflect_normal_velocity() {
+        for (start, velocity, boundary) in [(9.0, 4.0, 10.0), (1.0, -4.0, 0.0)] {
+            let mut p = Particle::new(start, 5.0, velocity, 2.0, 1.0, 0.5, 0.25);
+            p.update(&Point2d::new(0.0, 0.0));
+            p.check_rebound_x(0.0, 10.0);
+            assert_eq!(p.current.x, boundary);
+            assert_eq!(p.current.x - p.previous.x, -velocity * 0.5);
+            assert_eq!(p.current.y - p.previous.y, 1.5);
         }
     }
-    pub fn check_rebound_y(&mut self, min_y: f64, max_y: f64) {
-        if self.current.y > max_y || self.current.y < min_y {
-            let _y = self.current.y;
-            self.current.y = self.previous.y;
-            self.previous.x = self.current.x - (1.0 - self.friction_factor) * (self.current.x - self.previous.x);
-            self.previous.y = _y - self.elasticity_factor * (_y - self.previous.y);
-        }
+
+    #[test]
+    fn floor_contact_can_stop_without_bouncing() {
+        let mut p = Particle::new(5.0, 9.0, 2.0, 4.0, 1.0, 0.0, 1.0);
+        p.update(&Point2d::new(0.0, 0.0));
+        p.check_rebound_y(0.0, 10.0);
+        assert_eq!(p.current, Point2d::new(7.0, 10.0));
+        assert_eq!(p.previous, p.current);
     }
 }

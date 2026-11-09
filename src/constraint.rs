@@ -1,35 +1,106 @@
-use std::rc::Rc;
 use crate::particle::Particle;
+use crate::point2d::Point2d;
 
 pub struct Constraint {
-    pub p1: Rc<Particle>,
-    pub p2: Rc<Particle>,
+    pub p1: usize,
+    pub p2: usize,
     pub min_distance: f64,
     pub max_distance: f64,
 }
 
 impl Constraint {
-    pub fn square_distance(&self) -> f64 {
-        return 0.0;
-        /* let x = self.p1.x - self.p2.x;
-        let y = self.p1.y - self.p2.y;
-        return x * x + y * y;*/
+    pub fn fix(&self, particles: &mut [Particle]) {
+        let delta = particles[self.p2].current - particles[self.p1].current;
+        let distance = delta.x.hypot(delta.y);
+        let target = distance.clamp(self.min_distance, self.max_distance);
+        if distance == target {
+            return;
+        }
+
+        let w1 = particles[self.p1].inverse_mass();
+        let w2 = particles[self.p2].inverse_mass();
+        let total_weight = w1 + w2;
+        if total_weight == 0.0 {
+            return;
+        }
+
+        // Coincident points have no direction; choose a deterministic separation axis.
+        let direction = if distance > 0.0 {
+            delta / distance
+        } else {
+            Point2d::new(1.0, 0.0)
+        };
+        let error = distance - target;
+        particles[self.p1].current.x += direction.x * error * (w1 / total_weight);
+        particles[self.p1].current.y += direction.y * error * (w1 / total_weight);
+        particles[self.p2].current.x -= direction.x * error * (w2 / total_weight);
+        particles[self.p2].current.y -= direction.y * error * (w2 / total_weight);
     }
-    /* pub fn distance(&self) -> f64 {
-        return f64::sqrt(self.square_distance());
-    }*/
-    pub fn is_ok(&self) -> bool {
-        let square_distance = self.square_distance();
-        let square_min_distance = self.min_distance * self.min_distance;
-        let square_max_distance = self.max_distance * self.max_distance;
-        return square_distance > square_min_distance && square_distance < square_max_distance;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn particle(x: f64, mass: f64) -> Particle {
+        Particle::new(x, 0.0, 0.0, 0.0, mass, 0.0, 0.0)
     }
-    pub fn fix(&mut self) {
-        /*let vector_x = (self.p2.x - self.p1.x) / 2.0;
-        let vector_y = (self.p2.y - self.p1.y) / 2.0;
-        self.p1.x += vector_x;
-        self.p2.x -= vector_x;
-        self.p1.y += vector_y;
-        self.p2.y -= vector_y;*/
+
+    fn constraint(min_distance: f64, max_distance: f64) -> Constraint {
+        Constraint {
+            p1: 0,
+            p2: 1,
+            min_distance,
+            max_distance,
+        }
+    }
+
+    #[test]
+    fn corrects_stretched_and_compressed_segments() {
+        for distance in [2.0, 20.0] {
+            let mut particles = [particle(0.0, 1.0), particle(distance, 1.0)];
+            constraint(10.0, 10.0).fix(&mut particles);
+            assert!((particles[1].current.x - particles[0].current.x - 10.0).abs() < 1e-10);
+            assert!((particles[0].current.x + particles[1].current.x - distance).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn respects_distance_interval_including_endpoints() {
+        for distance in [5.0, 7.0, 10.0] {
+            let mut particles = [particle(0.0, 1.0), particle(distance, 1.0)];
+            constraint(5.0, 10.0).fix(&mut particles);
+            assert_eq!(particles[0].current.x, 0.0);
+            assert_eq!(particles[1].current.x, distance);
+        }
+    }
+
+    #[test]
+    fn distributes_correction_by_inverse_mass() {
+        let mut particles = [particle(0.0, 1.0), particle(20.0, 3.0)];
+        constraint(10.0, 10.0).fix(&mut particles);
+        assert_eq!(particles[0].current.x, 7.5);
+        assert_eq!(particles[1].current.x, 17.5);
+    }
+
+    #[test]
+    fn preserves_anchors_at_either_end() {
+        for masses in [[0.0, 1.0], [1.0, -1.0], [0.0, -1.0]] {
+            let mut particles = [particle(0.0, masses[0]), particle(20.0, masses[1])];
+            constraint(10.0, 10.0).fix(&mut particles);
+            for i in 0..2 {
+                if masses[i] <= 0.0 {
+                    assert_eq!(particles[i].current.x, i as f64 * 20.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn separates_coincident_particles_without_nan() {
+        let mut particles = [particle(0.0, 0.0), particle(0.0, 1.0)];
+        constraint(10.0, 10.0).fix(&mut particles);
+        assert_eq!(particles[0].current, Point2d::new(0.0, 0.0));
+        assert_eq!(particles[1].current, Point2d::new(10.0, 0.0));
     }
 }
