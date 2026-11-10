@@ -12,6 +12,13 @@ Une corde suspendue, un drapeau en tissu et une particule libre apparaissent
 au lancement. Les segments bleus representent les contraintes de distance
 et les points rouges sont les ancrages immobiles. `R` ajoute une corde,
 `F` ajoute un drapeau, `N` ajoute une particule libre, `Echap` ferme la fenetre.
+`E` declenche une explosion a une position aleatoire dans le bas de l'ecran,
+avec un rayon de 300 a 450 pixels et une impulsion de 400 a 700,
+pour deplacer aussi les particules les plus lourdes.
+Un cercle orange indique temporairement l'expansion de l'explosion.
+L'impulsion radiale est appliquee immediatement aux centres des particules
+dans ce rayon, decroit lineairement avec la distance et est divisee par la masse.
+Les noeuds du tissu et de la corde sont affectes, mais les ancrages restent fixes.
 Chaque particule libre recoit une couleur aleatoire a sa creation et la conserve.
 Les ancrages restent rouges et les noeuds de corde et de tissu restent noirs.
 

@@ -9,6 +9,7 @@ use crate::world::{World, TIME_STEP};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
+use sdl2::rect::Point;
 use std::time::{Duration, Instant};
 
 fn add_demo_particle(world: &mut World) {
@@ -49,7 +50,7 @@ fn main() -> Result<(), String> {
     let mut world = World::new(1800.0, 900.0);
     let window = video_subsystem
         .window(
-            "Verlet | R : corde | F : drapeau | N : particule | Echap : quitter",
+            "Verlet | R : corde | F : drapeau | N : particule | E : explosion | Echap : quitter",
             world.x(),
             world.y(),
         )
@@ -67,6 +68,7 @@ fn main() -> Result<(), String> {
 
     let mut previous_frame = Instant::now();
     let mut accumulator = 0.0;
+    let mut explosion_flash = None;
     'running: loop {
         let frame_start = Instant::now();
         // Limit catch-up after a long pause to avoid a spiral of death.
@@ -105,6 +107,19 @@ fn main() -> Result<(), String> {
                 } => {
                     add_demo_flag(&mut world);
                 }
+                Event::KeyDown {
+                    keycode: Some(Keycode::E),
+                    repeat: false,
+                    ..
+                } => {
+                    let center = Point2d::new(
+                        rand::random_range(0.1..=0.9) * world.x() as f64,
+                        rand::random_range(0.92..=0.98) * world.y() as f64,
+                    );
+                    let radius = rand::random_range(300.0..=450.0);
+                    world.explode(center, radius, rand::random_range(400.0..=700.0));
+                    explosion_flash = Some((center, radius, Instant::now()));
+                }
                 _ => {}
             }
         }
@@ -115,6 +130,24 @@ fn main() -> Result<(), String> {
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         canvas.clear();
         world.draw(&mut canvas)?;
+        if let Some((center, radius, started)) = explosion_flash {
+            let progress = started.elapsed().as_secs_f64() / 0.4;
+            if progress < 1.0 {
+                canvas.set_draw_color(Color::RGB(240, 130, 20));
+                let point = |angle: f64| {
+                    Point::new(
+                        (center.x + angle.cos() * radius * progress) as i32,
+                        (center.y + angle.sin() * radius * progress) as i32,
+                    )
+                };
+                for i in 0..64 {
+                    let angle = std::f64::consts::TAU / 64.0;
+                    canvas.draw_line(point(i as f64 * angle), point((i + 1) as f64 * angle))?;
+                }
+            } else {
+                explosion_flash = None;
+            }
+        }
         canvas.present();
         std::thread::sleep(
             Duration::from_secs_f64(TIME_STEP).saturating_sub(frame_start.elapsed()),

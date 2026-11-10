@@ -45,6 +45,40 @@ impl World {
         index
     }
 
+    pub fn explode(&mut self, center: Point2d, radius: f64, impulse: f64) {
+        assert!(center.x.is_finite() && center.y.is_finite());
+        assert!(
+            radius.is_finite() && radius > 0.0,
+            "invalid explosion radius"
+        );
+        assert!(
+            impulse.is_finite() && impulse >= 0.0,
+            "invalid explosion impulse"
+        );
+        for p in &mut self.particles {
+            if p.mass <= 0.0 {
+                continue;
+            }
+            let delta = p.current - center;
+            if delta.x.abs() >= radius || delta.y.abs() >= radius {
+                continue;
+            }
+            let distance = delta.x.hypot(delta.y);
+            if distance >= radius {
+                continue;
+            }
+            let direction = if distance > 0.0 {
+                delta / distance
+            } else {
+                Point2d::new(0.0, -1.0)
+            };
+            let kick = impulse * (1.0 - distance / radius) * p.inverse_mass();
+            // Changing the previous position adds to Verlet's implicit velocity.
+            p.previous.x -= direction.x * kick;
+            p.previous.y -= direction.y * kick;
+        }
+    }
+
     pub fn add_constraint(&mut self, p1: usize, p2: usize, min_distance: f64, max_distance: f64) {
         assert!(p1 < self.particles.len() && p2 < self.particles.len() && p1 != p2);
         assert!(min_distance.is_finite() && max_distance.is_finite());
@@ -216,6 +250,55 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explosion_adds_radial_velocity_with_distance_and_mass_falloff() {
+        let mut world = World::new(500.0, 500.0);
+        for (x, y, mass) in [
+            (150.0, 250.0, 1.0),
+            (250.0, 150.0, 2.0),
+            (275.0, 250.0, 1.0),
+        ] {
+            world.add_particle(disk(x, y, mass, 3.0));
+        }
+        world.explode(Point2d::new(250.0, 250.0), 200.0, 20.0);
+        for (p, velocity) in world.particles.iter().zip([
+            Point2d::new(-10.0, 0.0),
+            Point2d::new(0.0, -5.0),
+            Point2d::new(17.5, 0.0),
+        ]) {
+            assert_eq!(p.current - p.previous, velocity);
+        }
+    }
+
+    #[test]
+    fn explosion_preserves_anchors_and_particles_outside_radius() {
+        let mut world = World::new(500.0, 500.0);
+        for (x, y, mass) in [
+            (250.0, 250.0, 0.0),
+            (260.0, 250.0, -1.0),
+            (350.0, 250.0, 1.0),
+            (340.0, 340.0, 1.0),
+        ] {
+            world.add_particle(disk(x, y, mass, 3.0));
+        }
+        let before = world.particles.clone();
+        world.explode(Point2d::new(250.0, 250.0), 100.0, 20.0);
+        for (p, old) in world.particles.iter().zip(before) {
+            assert_eq!(p.current, old.current);
+            assert_eq!(p.previous, old.previous);
+        }
+    }
+
+    #[test]
+    fn explosion_at_center_kicks_upward_and_preserves_existing_velocity() {
+        let mut world = World::new(500.0, 500.0);
+        world.add_particle(Particle::new(250.0, 250.0, 3.0, 2.0, 1.0, 0.0, 0.0));
+        world.explode(Point2d::new(250.0, 250.0), 100.0, 20.0);
+        let p = &world.particles[0];
+        assert_eq!(p.current, Point2d::new(250.0, 250.0));
+        assert_eq!(p.current - p.previous, Point2d::new(3.0, -18.0));
+    }
 
     #[test]
     fn flag_builds_flexible_grid_with_two_bottom_anchors() {
