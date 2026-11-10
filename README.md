@@ -12,6 +12,8 @@ Une corde suspendue, un drapeau en tissu et une particule libre apparaissent
 au lancement. Les segments bleus representent les contraintes de distance
 et les points rouges sont les ancrages immobiles. `R` ajoute une corde,
 `F` ajoute un drapeau, `N` ajoute une particule libre, `Echap` ferme la fenetre.
+Chaque particule libre recoit une couleur aleatoire a sa creation et la conserve.
+Les ancrages restent rouges et les noeuds de corde et de tissu restent noirs.
 
 Le drapeau est un maillage de 13 colonnes et 9 lignes, fixe uniquement aux
 coins inferieurs gauche et droit. Sa partie superieure retombe sous la gravite.
@@ -57,6 +59,7 @@ Les contraintes comparent d'abord les distances au carre : une distance deja
 valide ne demande pas de racine carree, sauf aux echelles numeriques extremes.
 Cette projection de contact utilise la vitesse implicite de Verlet ; les
 coefficients de restitution et de frottement s'appliquent seulement aux bords.
+Les particules libres ont une restitution de 0.85 pour des rebonds marques.
 La detection examine toutes les paires (cout quadratique).
 Comme les contraintes de corde, les contacts sont resolus iterativement :
 un petit chevauchement numerique peut subsister dans les configurations denses.

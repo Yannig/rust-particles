@@ -9,6 +9,7 @@ pub struct Particle {
     pub previous: Point2d,
     pub mass: f64,
     pub radius: f64,
+    pub color: Color,
     pub elasticity_factor: f64,
     pub friction_factor: f64,
 }
@@ -35,6 +36,7 @@ impl Particle {
             elasticity_factor,
             mass,
             radius: 3.0,
+            color: Color::RGB(0, 0, 0),
             friction_factor,
         }
     }
@@ -44,6 +46,10 @@ impl Particle {
             "invalid particle radius"
         );
         self.radius = radius;
+        self
+    }
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.color = color;
         self
     }
     pub fn inverse_mass(&self) -> f64 {
@@ -57,7 +63,7 @@ impl Particle {
         canvas.set_draw_color(if self.mass <= 0.0 {
             Color::RGB(200, 50, 50)
         } else {
-            Color::RGB(0, 0, 0)
+            self.color
         });
         if self.radius == 0.0 {
             return self.current.draw(canvas);

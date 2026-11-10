@@ -15,7 +15,16 @@ fn add_demo_particle(world: &mut World) {
     let radius = rand::random_range(5.0..=60.0);
     let start = 20.0_f64.max(radius + 2.0);
     let mass = 10.0 * (radius / 12.0).powi(2);
-    world.add_particle(Particle::new(start, start, 10.0, 0.0, mass, 0.3, 0.2).with_radius(radius));
+    let color = Color::RGB(
+        rand::random_range(30..=200),
+        rand::random_range(30..=200),
+        rand::random_range(30..=200),
+    );
+    world.add_particle(
+        Particle::new(start, start, 10.0, 0.0, mass, 0.85, 0.2)
+            .with_radius(radius)
+            .with_color(color),
+    );
 }
 
 fn add_demo_rope(world: &mut World) {
